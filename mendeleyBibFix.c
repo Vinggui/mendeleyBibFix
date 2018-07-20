@@ -83,6 +83,12 @@
 
 #define BIB_TYPE_MAX 25
 
+#define IGNORE_TECHREPORT 1
+
+// Define the size of chars that should be escaped with "\" and ignore mendeley escape option
+#define ESCAPE_SPECIAL_CHAR_LIST_SIZE 1
+#define ESCAPE_CHAR_LIST "&"
+
 // Function declarations
 char * stringAllocate(long stringLength);
 char * stringWrite(char * src);
@@ -179,7 +185,7 @@ int main(int argc, char *argv[])
 	fileLength = ftell(inputFile);
 	fseek(inputFile,0,SEEK_SET);
 	inputContent = malloc(fileLength + 1);
-	outputContent = malloc(fileLength + 1); // Output will be no longer than input
+	outputContent = malloc(2*fileLength + 1); // Output will be no longer than twice the input (Escapes)
 	if(inputContent == NULL
 		|| outputContent == NULL)
 	{
@@ -190,6 +196,9 @@ int main(int argc, char *argv[])
 	fclose(inputFile);
 	printf("Successfully read and closed input file.\n");
 	
+	#if IGNORE_TECHREPORT == 1
+		printf("Ignoring techreport.\n");
+	#endif
 	//
 	// Scan and fix bib entries
 	//
@@ -234,17 +243,32 @@ int main(int argc, char *argv[])
 		// Current entry goes from inputContent[curInputAnchorInd]
 		// to inputContent[curInputInd]+1
 		curBibLength = curInputInd-curInputAnchorInd+2;
-		curBibEntry = malloc((curBibLength + 1)*sizeof(char));
+		// curBibLength was doubled for efficiency and applying escapes chars
+		curBibEntry = malloc((2*curBibLength + 1)*sizeof(char));
 		if(curBibEntry == NULL)
 		{
 			fprintf(stderr,"ERROR: Memory could not be allocated to copy bib entry %lu.\n", numEntry);
 			exit(EXIT_FAILURE);
 		}
-		for(curBibInd = 0; curBibInd < curBibLength; curBibInd++)
+		int curBibIndWriter;
+		for(curBibInd = 0, curBibIndWriter = 0; curBibInd < curBibLength; curBibInd++, curBibIndWriter++)
 		{
-			curBibEntry[curBibInd] = inputContent[curInputAnchorInd+curBibInd];
+			curBibEntry[curBibIndWriter] = inputContent[curInputAnchorInd+curBibInd];
+			#if ESCAPE_SPECIAL_CHAR_LIST_SIZE > 0
+				int escape_counter;
+				for(escape_counter = 0; escape_counter < ESCAPE_SPECIAL_CHAR_LIST_SIZE; escape_counter++)
+				{
+					char *escape_list = ESCAPE_CHAR_LIST;
+					if(escape_list[escape_counter] == inputContent[curInputAnchorInd+curBibInd])
+					{
+						curBibEntry[curBibIndWriter++] = '\\';
+						curBibEntry[curBibIndWriter] = escape_list[escape_counter];
+					}	
+				}
+			#endif
 		}
-		curBibEntry[curBibInd] = '\0';
+		curBibEntry[curBibIndWriter] = '\0';
+		curBibLength = curBibIndWriter;
 		
 		// curBibEntry is now a valid substring of the original input file
 		// Apply fixes as necessary
@@ -268,6 +292,15 @@ int main(int argc, char *argv[])
 				break;
 			}
 		}
+
+		#if IGNORE_TECHREPORT == 1
+			if(!strcmp(bibType,"techreport"))
+			{
+				// Should we free it here!?
+				free(curBibEntry);
+				continue;
+			}
+		#endif
 		
 		bHasYear = false;
 		bHasISSN = false;
@@ -278,6 +311,9 @@ int main(int argc, char *argv[])
 			{
 				// We're at the start of a line in the current bib entry
 				// Scan ahead to see if its an entry that we need to fix
+				/*
+				 * The month is not a problem anymore
+
 				if(!strncmp(&curBibEntry[curBibInd+1], "month =",7))
 				{	// Next line lists month. Format should be mmm
 					// and not {mmm}
@@ -292,7 +328,8 @@ int main(int argc, char *argv[])
 							curBibLength - curBibInd-13);
 						curBibLength -= 2;
 					}
-				} else if(!strncmp(&curBibEntry[curBibInd+1], "title =",7))
+				} else */
+				if(!strncmp(&curBibEntry[curBibInd+1], "title =",7))
 				{ 	// Title is supposed to be surrounded by 1 set of braces and not 2
 					// Remove extra set of curly braces
 					indEOL = findEndOfLine(curBibEntry, curBibInd+1);
@@ -311,6 +348,48 @@ int main(int argc, char *argv[])
 					curBibLength -= indEOL - curBibInd;
 					curBibInd--; // Correct index so that line after annote is read correctly
 				} else if(!strncmp(&curBibEntry[curBibInd+1], "file =",6))
+				{	// Entry has a filename. Erase the whole line
+					indEOL = findEndOfLine(curBibEntry, curBibInd+1);
+					memmove(&curBibEntry[curBibInd+1], &curBibEntry[indEOL+1],
+						curBibLength - indEOL + 1);
+					curBibLength -= indEOL - curBibInd;
+					curBibInd--; // Correct index so that line after filename is read correctly
+				} else if(!strncmp(&curBibEntry[curBibInd+1], "abstract =",10))
+				{	// Entry has a filename. Erase the whole line
+					indEOL = findEndOfLine(curBibEntry, curBibInd+1);
+					memmove(&curBibEntry[curBibInd+1], &curBibEntry[indEOL+1],
+						curBibLength - indEOL + 1);
+					curBibLength -= indEOL - curBibInd;
+					curBibInd--; // Correct index so that line after filename is read correctly
+				} else if(!strncmp(&curBibEntry[curBibInd+1], "eprint =",8))
+				{	// Entry has a filename. Erase the whole line
+					indEOL = findEndOfLine(curBibEntry, curBibInd+1);
+					memmove(&curBibEntry[curBibInd+1], &curBibEntry[indEOL+1],
+						curBibLength - indEOL + 1);
+					curBibLength -= indEOL - curBibInd;
+					curBibInd--; // Correct index so that line after filename is read correctly
+				} else if(!strncmp(&curBibEntry[curBibInd+1], "mendeley-tags =",15))
+				{	// Entry has a filename. Erase the whole line
+					indEOL = findEndOfLine(curBibEntry, curBibInd+1);
+					memmove(&curBibEntry[curBibInd+1], &curBibEntry[indEOL+1],
+						curBibLength - indEOL + 1);
+					curBibLength -= indEOL - curBibInd;
+					curBibInd--; // Correct index so that line after filename is read correctly
+				} else if(!strncmp(&curBibEntry[curBibInd+1], "archivePrefix =",15))
+				{	// Entry has a filename. Erase the whole line
+					indEOL = findEndOfLine(curBibEntry, curBibInd+1);
+					memmove(&curBibEntry[curBibInd+1], &curBibEntry[indEOL+1],
+						curBibLength - indEOL + 1);
+					curBibLength -= indEOL - curBibInd;
+					curBibInd--; // Correct index so that line after filename is read correctly
+				} else if(!strncmp(&curBibEntry[curBibInd+1], "arxivId =",9))
+				{	// Entry has a filename. Erase the whole line
+					indEOL = findEndOfLine(curBibEntry, curBibInd+1);
+					memmove(&curBibEntry[curBibInd+1], &curBibEntry[indEOL+1],
+						curBibLength - indEOL + 1);
+					curBibLength -= indEOL - curBibInd;
+					curBibInd--; // Correct index so that line after filename is read correctly
+				} else if(!strncmp(&curBibEntry[curBibInd+1], "keywords =",10))
 				{	// Entry has a filename. Erase the whole line
 					indEOL = findEndOfLine(curBibEntry, curBibInd+1);
 					memmove(&curBibEntry[curBibInd+1], &curBibEntry[indEOL+1],
