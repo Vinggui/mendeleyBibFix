@@ -82,6 +82,7 @@
 #include <time.h> // For time record keeping
 
 #define BIB_TYPE_MAX 25
+#define BIB_TAG_MAX  100
 
 #define IGNORE_TECHREPORT 1
 
@@ -122,6 +123,7 @@ int main(int argc, char *argv[])
 	int curException;
 	bool bUrlException;
 	char bibType[BIB_TYPE_MAX];
+  char bibTAG[BIB_TAG_MAX];
 	
 	char INPUT_DEFAULT[] = "library.bib";
 	char OUTPUT_DEFAULT[] = "library_fixed.bib";
@@ -141,6 +143,7 @@ int main(int argc, char *argv[])
 	
 	// Bib-entry variables
 	unsigned long numEntry = 0;
+  unsigned long numEntryIgnored = 0;
 	char * curBibEntry;
 	unsigned long curBibInd, curBibLength, indEOL;
 	
@@ -197,7 +200,7 @@ int main(int argc, char *argv[])
 	printf("Successfully read and closed input file.\n");
 	
 	#if IGNORE_TECHREPORT == 1
-		printf("Ignoring techreport.\n");
+		printf("Ignoring techreports with RFC.\n");
 	#endif
 	//
 	// Scan and fix bib entries
@@ -212,14 +215,17 @@ int main(int argc, char *argv[])
 		// Find start of next entry
 		while(inputContent[curInputInd] != '@')
 		{
-			if(inputContent[curInputInd] == '\0')
+			if(inputContent[curInputInd] == '\0') {
 				break; // Reached EOF. No more entries to scan
-			else
+      } else {
 				curInputInd++;
+      }
 		}
 		
-		if(inputContent[curInputInd] == '\0')
+		if(inputContent[curInputInd] == '\0') {
+      printf("End of process\n");
 			break;
+    }
 	
 		curInputAnchorInd = curInputInd++;
 		
@@ -237,8 +243,10 @@ int main(int argc, char *argv[])
 			
 		}
 		
-		if(inputContent[curInputInd] == '\0')
+		if(inputContent[curInputInd] == '\0') {
+      printf("End of process\n");
 			break;
+    }
 		
 		// Current entry goes from inputContent[curInputAnchorInd]
 		// to inputContent[curInputInd]+1
@@ -283,22 +291,44 @@ int main(int argc, char *argv[])
 			curBibInd++;
 		}
 		bibType[curBibInd-1] = '\0';
-		
-		for(curException = 0; curException < NUM_URL_EXCEPTIONS; curException++)
-		{
-			if(!strcmp(bibType,URL_EXCEPTION_TYPES[curException]))
-			{
-				bUrlException = true; // Current type of entry needs to keep URL
-				break;
-			}
-		}
+
+    // Get the bib tag assigned skipping "{"
+    curBibInd++;
+    int tagCounter = 0;
+    while((curBibEntry[curBibInd] != ',' &&
+          curBibEntry[curBibInd] != '\n' &&
+          curBibEntry[curBibInd] != '\0')
+      && curBibInd < BIB_TAG_MAX)
+    {
+      bibTAG[tagCounter++] = curBibEntry[curBibInd];
+      curBibInd++;
+    }
+    bibTAG[tagCounter] = '\0';
+
+
+    for(curException = 0; curException < NUM_URL_EXCEPTIONS; curException++)
+    {
+      if(!strcmp(bibType,URL_EXCEPTION_TYPES[curException]))
+      {
+        bUrlException = true; // Current type of entry needs to keep URL
+        numEntryIgnored++;
+        printf("Bib-entry in the ignored list: %s\n", bibTAG);
+        break;
+      }
+    }
 
 		#if IGNORE_TECHREPORT == 1
 			if(!strcmp(bibType,"techreport"))
 			{
 				// Should we free it here!?
-				free(curBibEntry);
-				continue;
+        if(strstr(bibTAG, "RFC") != NULL) {
+          numEntryIgnored++;
+          printf("Bib-entry RFC ignored: %s\n", bibTAG);
+          free(curBibEntry);
+          continue;
+        } else {
+          printf("Bib-entry is techreport, but not RFC: %s\n", bibTAG);
+        }
 			}
 		#endif
 		
@@ -457,7 +487,7 @@ int main(int argc, char *argv[])
 	
 	fprintf(outputFile, "%s", outputContent);
 	fclose(outputFile);
-	printf("Successfully wrote and closed output file with %lu entries.\n", numEntry);
+	printf("Successfully wrote and closed output file with %lu entries. %lu ignored.\n", numEntry, numEntryIgnored);
 	
 	// Cleanup
 	free(inputContent);
