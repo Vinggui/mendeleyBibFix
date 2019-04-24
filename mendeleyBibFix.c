@@ -85,6 +85,7 @@
 #define BIB_TAG_MAX  100
 
 #define IGNORE_TECHREPORT 1
+#define REMOVE_TITLE_EXTRA_BRACE	0
 
 // Define the size of chars that should be escaped with "\" and ignore mendeley escape option
 #define ESCAPE_SPECIAL_CHAR_LIST_SIZE 1
@@ -360,7 +361,9 @@ int main(int argc, char *argv[])
 					}
 				} else */
 				if(!strncmp(&curBibEntry[curBibInd+1], "title =",7))
-				{ 	// Title is supposed to be surrounded by 1 set of braces and not 2
+				{
+		#if REMOVE_TITLE_EXTRA_BRACE == 1
+					// Title is supposed to be surrounded by 1 set of braces and not 2
 					// Remove extra set of curly braces
 					indEOL = findEndOfLine(curBibEntry, curBibInd+1);
 					// Shift title over extra opening curly brace
@@ -370,6 +373,7 @@ int main(int argc, char *argv[])
 					memmove(&curBibEntry[indEOL-3], &curBibEntry[indEOL-1],
 						curBibLength - indEOL + 2);
 					curBibLength -= 2;
+		#endif /* REMOVE_TITLE_EXTRA_BRACER == 1 */
 				} else if(!strncmp(&curBibEntry[curBibInd+1], "annote =",8))
 				{	// Entry has an annotation. Erase the whole field
 					indEOL = findEndOfField(curBibEntry, curBibInd+1);
