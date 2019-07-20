@@ -66,6 +66,7 @@ class rfc_class:
     def __init__(self):
         self.tag = ""
         self.number = 0
+        self.converted = False
 
     def __lt__(self, other):
         return self.number < other.number
@@ -82,7 +83,7 @@ got_type = False
 for line in lib_file:
     if "@techreport" in line:
         if got_type == True:
-            print("ERROR parsing input library")
+            print("ERROR parsing input library: Maybe RFC without number?")
             exit()
         begin = line.find("{")+1
         end = line.find(",")
@@ -126,7 +127,7 @@ for line in rfc_file:
         # Get title
         start = line.find("\"") + 1
         end = line.find("\",")
-        ref.title = line[start:end]
+        ref.title = "{"+line[start:end]+"}"
 
         # Get std or rfc
         start = end + 3
@@ -175,6 +176,7 @@ for line in rfc_file:
         # print(ref.author)
 
         output_file.write(output_piece)
+        rfc_input_list[counter].converted = True
         techreport_output_counter += 1
 
         counter += 1
@@ -187,3 +189,6 @@ lib_file.close()
 
 print("Process exited successfully!")
 print("{} references found in {};\n{} references formatted to {}!".format(techreport_input_counter, library_name, techreport_output_counter, output_file_name))
+for rfc_value in rfc_input_list:
+    if not rfc_value.converted:
+        print("RFC not converted: "+str(rfc_value.tag))
